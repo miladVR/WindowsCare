@@ -1,0 +1,35 @@
+name: Publish preview release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable preview version, for example 0.1.0-preview.1
+        required: true
+        default: 0.1.0-preview.1
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify
+        shell: powershell
+        run: .\Tests\Run-Tests.ps1
+      - name: Package
+        shell: powershell
+        env:
+          CARE_VERSION: ${{ inputs.version }}
+          CARE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if ($env:CARE_VERSION -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Only preview versions can be published by this workflow.' }
+          $parts = $env:CARE_REPOSITORY.Split('/')
+          .\Tools\Build-Release.ps1 -Version $env:CARE_VERSION -Owner $parts[0] -Repository $parts[1]
+      - name: Publish immutable prerelease
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARE_VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$env:CARE_VERSION" "dist/WindowsCare-$env:CARE_VERSION.zip" "dist/SHA256SUMS.txt" "dist/release.json" "dist/Run-WindowsCare.txt" --target "${{ github.sha }}" --title "WindowsCare $env:CARE_VERSION" --notes-file dist/release-notes.md --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
